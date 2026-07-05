@@ -1424,6 +1424,26 @@
         "domain-entities",
         "frontend-components"
       ],
+      "produces_kinds": {
+        "business-logic-model": [
+          "service",
+          "ui",
+          "library"
+        ],
+        "business-rules": [
+          "service",
+          "spec",
+          "library"
+        ],
+        "domain-entities": [
+          "service",
+          "spec",
+          "library"
+        ],
+        "frontend-components": [
+          "ui"
+        ]
+      },
       "consumes": [
         {
           "artifact": "unit-of-work",
@@ -1469,7 +1489,7 @@
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
       "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, application design artifacts",
-      "outputs": "business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved)",
+      "outputs": "business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
       "rules_in_context": [
         {
           "path": "aidlc/spaces/default/memory/org.md",
@@ -1533,6 +1553,18 @@
         "reliability-requirements",
         "tech-stack-decisions"
       ],
+      "produces_kinds": {
+        "performance-requirements": [
+          "service",
+          "ui"
+        ],
+        "scalability-requirements": [
+          "service"
+        ],
+        "reliability-requirements": [
+          "service"
+        ]
+      },
       "consumes": [
         {
           "artifact": "business-logic-model",
@@ -1573,7 +1605,7 @@
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
       "inputs": "functional design artifacts, requirements.md, RE artifacts",
-      "outputs": "performance-requirements.md, security-requirements.md, scalability-requirements.md, reliability-requirements.md, tech-stack-decisions.md (under this stage's per-unit record dir, engine-resolved)",
+      "outputs": "performance-requirements.md, security-requirements.md, scalability-requirements.md, reliability-requirements.md, tech-stack-decisions.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
       "rules_in_context": [
         {
           "path": "aidlc/spaces/default/memory/org.md",
@@ -1635,6 +1667,23 @@
         "reliability-design",
         "logical-components"
       ],
+      "produces_kinds": {
+        "performance-design": [
+          "service",
+          "ui"
+        ],
+        "scalability-design": [
+          "service"
+        ],
+        "reliability-design": [
+          "service"
+        ],
+        "logical-components": [
+          "service",
+          "ui",
+          "library"
+        ]
+      },
       "consumes": [
         {
           "artifact": "performance-requirements",
@@ -1681,7 +1730,7 @@
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
       "inputs": "NFR requirements artifacts, functional design artifacts",
-      "outputs": "performance-design.md, security-design.md, scalability-design.md, reliability-design.md, logical-components.md (under this stage's per-unit record dir, engine-resolved)",
+      "outputs": "performance-design.md, security-design.md, scalability-design.md, reliability-design.md, logical-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
       "rules_in_context": [
         {
           "path": "aidlc/spaces/default/memory/org.md",
@@ -1744,6 +1793,27 @@
         "cicd-pipeline",
         "shared-infrastructure"
       ],
+      "produces_kinds": {
+        "deployment-architecture": [
+          "service",
+          "ui",
+          "packaging"
+        ],
+        "infrastructure-services": [
+          "service",
+          "packaging"
+        ],
+        "monitoring-design": [
+          "service",
+          "packaging"
+        ],
+        "cicd-pipeline": [
+          "service",
+          "ui",
+          "packaging",
+          "library"
+        ]
+      },
       "consumes": [
         {
           "artifact": "performance-design",
@@ -1798,7 +1868,7 @@
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
       "inputs": "NFR design artifacts, application design, functional design",
-      "outputs": "deployment-architecture.md, infrastructure-services.md, monitoring-design.md, cicd-pipeline.md, CONDITIONAL: shared-infrastructure.md (under this stage's per-unit record dir, engine-resolved)",
+      "outputs": "deployment-architecture.md, infrastructure-services.md, monitoring-design.md, cicd-pipeline.md, CONDITIONAL: shared-infrastructure.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
       "rules_in_context": [
         {
           "path": "aidlc/spaces/default/memory/org.md",

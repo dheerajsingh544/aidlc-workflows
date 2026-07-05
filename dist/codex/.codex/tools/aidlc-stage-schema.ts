@@ -6,7 +6,7 @@
 // validator: no I/O, no YAML parsing, no mutation — callers pass an
 // already-parsed object.
 
-import { isPlainObject } from "./aidlc-lib.ts";
+import { isPlainObject, UNIT_KINDS } from "./aidlc-lib.ts";
 
 // --- Public types ---
 
@@ -25,6 +25,13 @@ export interface StageFrontmatter {
   // Absent -> false.
   workspace_requires?: boolean;
   produces: string[];
+  // produces_kinds - optional per-kind applicability map: artifact name ->
+  // the unit kinds it applies to (UNIT_KINDS). An artifact NOT listed applies
+  // to all kinds; a listed one is pruned out of a unit whose kind is not in
+  // its list. It prunes BOTH the directive produces paths and the coverage
+  // set - exempt from nothing. Absent map = full matrix. Each key must name a
+  // produces entry; each value must be a non-empty list of valid kinds.
+  produces_kinds?: Record<string, string[]>;
   consumes: Array<{
     artifact: string;
     required: boolean;
@@ -112,7 +119,7 @@ const REQUIRED_FIELDS = [
   "outputs",
 ] as const;
 
-const OPTIONAL_FIELDS = ["for_each", "workspace_requires", "sensors", "scopes", "reviewer", "reviewer_max_iterations"] as const;
+const OPTIONAL_FIELDS = ["for_each", "workspace_requires", "produces_kinds", "sensors", "scopes", "reviewer", "reviewer_max_iterations"] as const;
 
 const KNOWN_FIELDS = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]);
 
@@ -237,6 +244,42 @@ export function validateStageFrontmatter(
   }
 
   checkStringArray(o, "produces", errors);
+
+  // produces_kinds - optional per-kind applicability map. When present it must
+  // be a plain object whose every key names a produces entry (union with
+  // optional_produces read defensively so this validates both standalone and
+  // once a conditional-produces axis lands) and whose every value is a
+  // non-empty list of valid unit kinds. An orphan key (typo) is an error: a
+  // silently-ignored map entry would defeat the pruning invisibly.
+  if ("produces_kinds" in o && o.produces_kinds !== undefined) {
+    const pk = o.produces_kinds;
+    if (!isPlainObject(pk)) {
+      errors.push(`produces_kinds must be object, got ${describe(pk)}`);
+    } else {
+      const declared = new Set<string>();
+      for (const arr of [o.produces, o.optional_produces]) {
+        if (Array.isArray(arr)) {
+          for (const n of arr) if (typeof n === "string") declared.add(n);
+        }
+      }
+      for (const [name, kinds] of Object.entries(pk)) {
+        if (!ARTIFACT_SLUG_RE.test(name)) {
+          errors.push(`produces_kinds key "${name}" is not kebab-case`);
+        } else if (!declared.has(name)) {
+          errors.push(`produces_kinds key "${name}" is not in produces`);
+        }
+        if (!Array.isArray(kinds) || kinds.length === 0) {
+          errors.push(`produces_kinds.${name} must be a non-empty list of unit kinds`);
+        } else {
+          for (const k of kinds) {
+            if (typeof k !== "string" || !(UNIT_KINDS as readonly string[]).includes(k)) {
+              errors.push(`produces_kinds.${name} lists unknown kind "${typeof k === "string" ? k : describe(k)}"`);
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Rule 8: nested consumes[] — array of {artifact, required, conditional_on?}.
   if ("consumes" in o) {

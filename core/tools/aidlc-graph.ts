@@ -120,6 +120,11 @@ export interface SensorResolution {
 export interface GraphStage extends StageEntry {
   condition?: string;
   produces: string[];
+  // produces_kinds - per-kind applicability map (artifact name to unit kinds).
+  // Lives on stage YAML, round-trips through parse/emit, and compiles into
+  // stage-graph.json. The engine's produces filter reads it to prune the
+  // per-unit construction matrix; an unlisted artifact applies to all kinds.
+  produces_kinds?: Record<string, string[]>;
   consumes: Consume[];
   requires_stage: string[];
   // sensors is the stage-side pull import — a list of sensor manifest
@@ -367,6 +372,7 @@ const FIELD_ORDER = [
   "for_each",
   "workspace_requires",
   "produces",
+  "produces_kinds",
   "consumes",
   "requires_stage",
   "sensors",
@@ -1575,6 +1581,9 @@ function buildGraphStage(
   }
   if (parsed.workspace_requires !== undefined) {
     stage.workspace_requires = parsed.workspace_requires;
+  }
+  if (parsed.produces_kinds !== undefined) {
+    stage.produces_kinds = parsed.produces_kinds;
   }
   if (parsed.sensors !== undefined) {
     stage.sensors = parsed.sensors;
