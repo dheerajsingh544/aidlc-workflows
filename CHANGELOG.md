@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.14] - 2026-07-06
+
+Fixes a silent-data-loss failure in Construction: when the compiled runtime graph was missing its bolt_dag node (a stale or deleted runtime-graph.json, for example when the runtime-compile hook never fired), every per-unit Construction stage silently degraded to a single iteration, so a multi-unit project shipped only its first unit with no error and the workflow completed as if done. The engine now self-heals on the read side: when the cached bolt_dag is absent it recomputes the unit batch DAG directly from inception/units-generation/unit-of-work-dependency.md (the same pure parse the compiler uses), so per-unit iteration, the approve-side coverage guard, and the autonomous swarm all see the full unit list regardless of whether a hook refreshed the graph. Scopes that never run units-generation are unaffected. **Upgrade:** re-copy your `dist/<harness>/` shell into the project.
+
+* Per-unit Construction stages (functional-design, nfr-requirements, nfr-design, infrastructure-design, code-generation) now iterate every unit even when runtime-graph.json is missing or lacks its bolt_dag node, recomputing batches from unit-of-work-dependency.md on the fly. A recompute writes a one-line stderr note naming the stale graph.
+* `report --result approved` on a per-unit stage now enforces the all-units coverage guard against the recomputed unit list too, so a stale graph can no longer let an early approve commit a partially built stage.
+* A unit-of-work-dependency.md whose fenced units block is missing, malformed, or cyclic (with no cached bolt_dag to fall back on) now surfaces as an error directive naming the artifact and the parse failure, instead of silently building one unit.
+* Workflows with no units-generation dependency artifact on disk keep the existing single-iteration behaviour, byte-identical.
+
 ## [2.2.0] - 2026-07-04
 
 Adaptive Workflows (roadmap Goal 3): a composer agent under `/aidlc` that fits the ceremony to the task. Describe the work and the engine routes by keyword inference - a clear match gets a one-line confirm naming the matched scope, rich or unmatched prose gets a compose offer instead of the old silent feature default. The composer reads the task and the workspace scan, proposes the EXECUTE/SKIP stage grid with a per-SKIP rationale, and after your approval authors it as a scope and starts the workflow in the same turn. Point it at a scan report (`/aidlc compose --report sonar.json`) to triage findings into a compact fix-and-ship run, or run `/aidlc compose` mid-workflow to re-shape the pending stages in place. Composed scopes ship with `keywords: []` so a one-off plan never rewires future keyword routing; making a scope inferable is an explicit gate choice. (The roadmap's 2.2.0/2.3.0 assignments swap: adaptive workflows ships now as 2.2.0; reviewer-as-verifier moves to 2.3.0 and carries the Full GA declaration - this cut does NOT declare GA.) **Upgrade:** re-copy your `dist/<harness>/` shell into the project.
