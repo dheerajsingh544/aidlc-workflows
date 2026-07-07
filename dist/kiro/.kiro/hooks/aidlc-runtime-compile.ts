@@ -21,11 +21,12 @@
 // compile's own audit emits cannot re-trigger the compile.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   activeIntent,
   activeSpace,
+  auditShards,
   type ClaudeCodeHookInput,
   errorMessage,
   hookDebug,
@@ -35,6 +36,7 @@ import {
   readAllAuditShards,
   recordHookDrop,
   resolveProjectDirFromHook,
+  runtimeGraphPath,
   harnessDir,
 } from "../tools/aidlc-lib.ts";
 
@@ -132,6 +134,40 @@ hookDebug(projectDir, "runtime-compile", "transition-gate", { hasTransition, las
 if (!hasTransition) {
   hookDebug(projectDir, "runtime-compile", "exit: no transition in audit tail");
   process.exit(0);
+}
+
+// 7b. Idempotency guard (IDE audit-tail mode only). On the CLI the command
+//     filter (step 3) already bounds compiles to the one Bash call that emitted
+//     the transition. In ide-audit-sync mode that filter is skipped, so the
+//     transition sits in the tail across EVERY subsequent shell command — and
+//     after WORKFLOW_COMPLETED the tail never changes again, which would make
+//     every future shell command pay a blocking recompile forever. Bound it by
+//     mtime: if runtime-graph.json is already at least as new as the newest
+//     audit shard, the tail hasn't changed since the last compile — skip. A real
+//     new transition bumps a shard's mtime past the graph and re-enables the
+//     compile. Cheap stat calls; no new marker file.
+if (ideAuditMode) {
+  try {
+    const graphMtime = statSync(runtimeGraphPath(projectDir, intent, space)).mtimeMs;
+    let newestShard = 0;
+    for (const shard of auditShards(projectDir, intent, space)) {
+      try {
+        const m = statSync(shard).mtimeMs;
+        if (m > newestShard) newestShard = m;
+      } catch {
+        // shard vanished mid-read — ignore
+      }
+    }
+    if (graphMtime >= newestShard) {
+      hookDebug(projectDir, "runtime-compile", "skip: graph newer than audit (idempotent)", {
+        graphMtime,
+        newestShard,
+      });
+      process.exit(0);
+    }
+  } catch {
+    // runtime-graph.json absent (never compiled) → fall through and compile.
+  }
 }
 
 // 8. Dispatch — sync subprocess. Hook waits for completion. On non-zero

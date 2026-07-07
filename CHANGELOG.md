@@ -33,9 +33,23 @@ Re-copy your `dist/kiro-ide/.kiro/` to pick up the fix.
   its decision path to `<record>/.aidlc-hooks-health/hook-debug.log`. Off by
   default (no log, no overhead); see the Kiro IDE harness guide for enabling it
   for IDE hooks.
-* **No new commands or flags.** The change is internal to the IDE adapter
-  (`harness/kiro-ide/`) plus a shared audit-tail helper; the Kiro CLI, Claude
-  Code, and Codex harnesses are untouched.
+* **The IDE audit-tail gating is forward-only and idempotent** (PR-review
+  hardening). `aidlc-sync-statusline` never rewinds `Current Stage`: it skips
+  when the workflow is not `Running`, when the pointer is `none`, or when the
+  audit's latest stage is already completed/skipped — so a finalize is never
+  undone by the next shell command. `latestStartedStageSlug` ignores synthetic
+  `--single` stage-runner rows. `aidlc-runtime-compile`'s IDE path adds an mtime
+  idempotency guard so a lingering transition (e.g. after `WORKFLOW_COMPLETED`)
+  does not recompile on every subsequent shell command. The adapter's path
+  extraction tolerates trailing newlines and strips a `str_replace`
+  ` (N occurrences)` suffix, and records a visible hook-drop when a write-class
+  tool yields no extractable path (no silent no-op).
+* **Behaviour for Kiro CLI, Claude Code, and Codex is unchanged.** The shared
+  core hooks (`aidlc-sync-statusline`, `aidlc-runtime-compile`, `aidlc-audit-logger`)
+  are edited and re-shipped to all four dists, but the new branches are gated
+  behind the IDE-only `ide-audit-sync` marker (and the opt-in `AIDLC_HOOK_DEBUG`
+  env var), so the CLI/Claude/Codex payload paths behave exactly as before.
+  `AIDLC_HOOK_DEBUG` is the only new knob and is off by default.
 
 ## [2.1.4] - 2026-06-29
 

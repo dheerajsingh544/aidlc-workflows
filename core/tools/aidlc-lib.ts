@@ -2667,8 +2667,16 @@ export function findAllEvents(
 // Payload-free derivation of "what stage are we on" — used by the Kiro IDE
 // sync-statusline path, where the hook receives no task payload and must read
 // the current stage from the audit tail instead.
+//
+// EXCLUDES synthetic `--single` stage-runner rows (Workflow: single-stage:<slug>)
+// — those belong to no main workflow and must never rewrite the main pointer
+// (mirrors the filter in aidlc-state.ts hasStageAuditEvent). Without this a
+// single-stage run's STAGE_STARTED would become the "latest" and the IDE
+// sync would repoint the main Current Stage at it.
 export function latestStartedStageSlug(audit: string): string | null {
-  const started = findAllEvents(audit, "STAGE_STARTED");
+  const started = findAllEvents(audit, "STAGE_STARTED").filter(
+    (ev) => !/^\*\*Workflow\*\*:\s*single-stage:/m.test(ev.block),
+  );
   if (started.length === 0) return null;
   const last = started[started.length - 1];
   const m = last.block.match(/^\*\*Stage\*\*:\s*([a-z][a-z0-9-]*)\s*$/m);

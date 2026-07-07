@@ -6,7 +6,7 @@
 // files so neither carries a runtime "am I CLI or IDE?" branch.
 //
 // Kiro IDE hook context (live-captured on Kiro IDE 0.12-main — see
-// tmp/hook-probe-findings.md):
+// docs/reference/kiro-ide-hook-payload.md):
 //   1. stdin is OPENED BUT NEVER WRITTEN/CLOSED — reading it hangs. The IDE
 //      delivers context through the `USER_PROMPT` environment variable instead.
 //   2. USER_PROMPT is JSON: { toolName, toolArgs, toolResult, toolSuccess }.
@@ -38,7 +38,7 @@
 
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hookDebug, resolveProjectDirFromHook } from "../tools/aidlc-lib.ts";
+import { hookDebug, recordHookDrop, resolveProjectDirFromHook } from "../tools/aidlc-lib.ts";
 
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 const target = process.argv[2] ?? "";
@@ -74,18 +74,25 @@ hookDebug(dbgProjectDir, "kiro-adapter", "invoked", {
 
 // Extract the absolute path of the file a write tool just touched from the
 // IDE's toolResult prose. toolArgs is always empty, so this is the ONLY source.
-// Strict: only the three known Kiro wordings match; anything else returns "" so
-// the caller fails open (no audit/sensor row for that write — advisory miss).
+// Only the known Kiro wordings match; anything else returns "" so the caller
+// can record a visible drop (no silent no-op).
 //   fs_write    → "Created the <PATH> file."
-//   str_replace → "Replaced text in <PATH>"
+//   str_replace → "Replaced text in <PATH>"           (may carry a trailing
+//                  " (N occurrences)" or similar suffix — stripped below)
 //   fs_append   → "Appended the text to the <PATH> file."
+//
+// Robustness (finding 4): trim first so a trailing newline does not defeat the
+// `$` anchor, and for the open-ended str_replace form stop the capture before a
+// trailing " (…)" parenthetical so a "Replaced text in foo.md (2 occurrences)"
+// result yields "foo.md", not "foo.md (2 occurrences)".
 function extractWrittenPath(toolResult: string): string {
-  let m = toolResult.match(/^Created the (.+) file\.$/);
-  if (m) return m[1];
-  m = toolResult.match(/^Replaced text in (.+)$/);
-  if (m) return m[1];
-  m = toolResult.match(/^Appended the text to the (.+) file\.$/);
-  if (m) return m[1];
+  const s = toolResult.trim();
+  let m = s.match(/^Created the (.+) file\.$/);
+  if (m) return m[1].trim();
+  m = s.match(/^Appended the text to the (.+) file\.$/);
+  if (m) return m[1].trim();
+  m = s.match(/^Replaced text in (.+?)(?:\s+\([^)]*\))?$/);
+  if (m) return m[1].trim();
   return "";
 }
 
@@ -117,7 +124,19 @@ function buildForward(): Forward {
       const canon = canonicalWriteTool(ide.toolName ?? "");
       if (canon === "") return null;
       const rawPath = extractWrittenPath(ide.toolResult ?? "");
-      if (!rawPath) return null;
+      if (!rawPath) {
+        // A write-class tool ran but its toolResult wording did not match any
+        // known pattern → the write is dropped from audit + sensors. Record a
+        // visible drop (finding 4) so `--doctor` can surface the decay instead
+        // of it being an invisible no-op — the exact failure class this harness
+        // exists to eliminate.
+        recordHookDrop(
+          dbgProjectDir,
+          "kiro-adapter",
+          `audit-and-sensors: ${ide.toolName ?? "?"} yielded no extractable path from toolResult: ${(ide.toolResult ?? "").slice(0, 120)}`,
+        );
+        return null;
+      }
       // Kiro IDE reports the path RELATIVE to the workspace root; the core hooks
       // compare against an ABSOLUTE record root, so resolve it here. Absolute
       // paths (defensive) pass through untouched.

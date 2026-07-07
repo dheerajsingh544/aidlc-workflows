@@ -83,7 +83,7 @@ string `{ toolName, toolArgs, toolResult, toolSuccess }`. The IDE leaves
 | `aidlc-audit-logger` | `postToolUse` (write) | Logs artifact create/update (path from `toolResult`) |
 | `aidlc-sensor-fire` | `postToolUse` (write) | Fires applicable sensors (path from `toolResult`) |
 | `aidlc-runtime-compile` | `postToolUse` (shell) | Recompiles the runtime graph (gated on the audit tail) |
-| `aidlc-sync-statusline` | `postToolUse` (spec) | Syncs `Current Stage` from the latest `STAGE_STARTED` in the audit |
+| `aidlc-sync-statusline` | `postToolUse` (shell) | Forward-only sync of `Current Stage` from the latest `STAGE_STARTED` in the audit (the `spec` event never fires in the IDE) |
 
 You will see a "Run Command Hook" line in chat each time one fires.
 

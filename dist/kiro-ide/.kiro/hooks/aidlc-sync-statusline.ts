@@ -19,6 +19,7 @@ import {
   isClaudeCodeHookInput,
   isoTimestamp,
   latestStartedStageSlug,
+  parseCheckboxes,
   readAllAuditShards,
   readStateFile,
   resolveProjectDirFromHook,
@@ -51,15 +52,42 @@ if (!existsSync(stateFile)) process.exit(0);
 let slug = "";
 const source = parsed.tool_input?.source ?? "";
 if (source === "ide-audit-sync") {
-  // Kiro IDE path: derive the current stage from the audit tail. Only update
-  // when it actually differs from the state file's Current Stage (idempotent —
-  // the hook fires on every tool call, so a no-op on no-change is the norm).
+  // Kiro IDE path: derive the current stage from the audit tail (payload-free).
+  // This is a FORWARD-ONLY mirror: it may only nudge Current Stage toward the
+  // latest STAGE_STARTED, never backward. Without the guards below, the last
+  // STAGE_STARTED lingers after a stage completes (approve advances Current
+  // Stage / finalize sets it to none + Status: Completed but emits no new
+  // STAGE_STARTED), so a naive "audit != state → set-status" would resurrect a
+  // finished stage — set-status forces Status: Running and flips the checkbox
+  // back to in-progress. Guards, in order:
+  const stateContent = readStateFile(projectDir);
+  const status = (getField(stateContent, "Status") ?? "").trim();
+  const current = (getField(stateContent, "Current Stage") ?? "").trim();
   const audit = readAllAuditShards(projectDir);
   const auditSlug = latestStartedStageSlug(audit);
-  const current = getField(readStateFile(projectDir), "Current Stage");
-  hookDebug(projectDir, "sync-statusline", "ide-audit-sync", { auditSlug, current });
+  hookDebug(projectDir, "sync-statusline", "ide-audit-sync", { auditSlug, current, status });
+
+  // (a) Only sync a live, running workflow. A completed/parked workflow (Status
+  //     != Running) or a cleared pointer (Current Stage none/empty) is ahead of
+  //     the audit tail by design — never rewind it.
+  if (status !== "Running") process.exit(0);
+  if (current === "" || current === "none") process.exit(0);
+  // (b) No audit slug, or it already matches state → nothing to do.
   if (!auditSlug) process.exit(0);
   if (current === auditSlug) process.exit(0);
+  // (c) Never sync BACKWARD: if the audit slug is a stage the workflow has
+  //     already completed or skipped, the state is legitimately ahead of it
+  //     (the stage finished; a newer STAGE_STARTED just wasn't the last row).
+  //     Syncing would demote a done stage — refuse.
+  const checkboxes = parseCheckboxes(stateContent);
+  const auditCb = checkboxes.find((c) => c.slug === auditSlug);
+  if (auditCb && (auditCb.state === "completed" || auditCb.state === "skipped")) {
+    hookDebug(projectDir, "sync-statusline", "skip: audit slug already done/skipped", {
+      auditSlug,
+      auditState: auditCb.state,
+    });
+    process.exit(0);
+  }
   slug = auditSlug;
 } else {
   // Claude Code / Kiro CLI path: TaskUpdate → in_progress with "[slug]" suffix.

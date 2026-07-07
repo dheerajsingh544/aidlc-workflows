@@ -355,3 +355,165 @@ describe("t188 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
     }
   });
 });
+
+// ============================================================
+// PR-review fixes (findings 1, 2, 3, 4). These pin the forward-only /
+// idempotent / robust-extraction behaviour the review flagged.
+// ============================================================
+
+/** Read a `- **Field**: value` line from the seeded state file. */
+function stateField(dir: string, field: string): string {
+  const content = readFileSync(seededStateFile(dir), "utf-8");
+  const m = content.match(new RegExp(`^- \\*\\*${field}\\*\\*:\\s*(.+)$`, "m"));
+  return m ? m[1].trim() : "";
+}
+
+/** Overwrite a `- **Field**: value` line in the seeded state file. */
+function setStateField(dir: string, field: string, value: string): void {
+  const path = seededStateFile(dir);
+  const content = readFileSync(path, "utf-8");
+  writeFileSync(
+    path,
+    content.replace(new RegExp(`^(- \\*\\*${field}\\*\\*:\\s*).+$`, "m"), `$1${value}`),
+    "utf-8",
+  );
+}
+
+/** Append a single-stage-run STAGE_STARTED (synthetic Workflow id). */
+function appendSingleStageStarted(dir: string, slug: string, ts: string): void {
+  const shard = join(seededAuditDir(dir), pinnedShardName());
+  const block = `\n## Stage Start\n**Timestamp**: ${ts}\n**Event**: STAGE_STARTED\n**Workflow**: single-stage:${slug}\n**Stage**: ${slug}\n**Agent**: orchestrator\n\n---\n`;
+  writeFileSync(shard, readFileSync(shard, "utf-8") + block, "utf-8");
+}
+
+describe("t188 forward-only sync-statusline (finding 1: no state resurrection)", () => {
+  test("F1a: does NOT resurrect a Completed workflow", () => {
+    const dir = scratchProject(true);
+    try {
+      // Simulate a finished workflow: the last STAGE_STARTED is the stage that
+      // just completed, but state has moved on to Completed / none.
+      appendStageStarted(dir, "requirements-analysis", "2026-06-30T10:00:00.000Z");
+      setStateField(dir, "Status", "Completed");
+      setStateField(dir, "Current Stage", "none");
+      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      expect(r.code).toBe(0);
+      // State must NOT be dragged back to Running / requirements-analysis.
+      expect(stateField(dir, "Status")).toBe("Completed");
+      expect(stateField(dir, "Current Stage")).toBe("none");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F1b: does NOT sync backward to an already-completed stage", () => {
+    const dir = scratchProject(true);
+    try {
+      // Audit tail's newest STAGE_STARTED is an EARLIER stage that is already
+      // [x] complete; state legitimately sits on a later stage. Must not rewind.
+      // Mark requirements-analysis completed, keep Current Stage ahead of it.
+      const path = seededStateFile(dir);
+      const content = readFileSync(path, "utf-8").replace(
+        "- [-] requirements-analysis — EXECUTE",
+        "- [x] requirements-analysis — EXECUTE",
+      );
+      writeFileSync(path, content, "utf-8");
+      setStateField(dir, "Current Stage", "user-stories");
+      appendStageStarted(dir, "requirements-analysis", "2026-06-30T10:00:00.000Z");
+      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      expect(r.code).toBe(0);
+      expect(stateField(dir, "Current Stage")).toBe("user-stories");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F1c: DOES sync forward when state is genuinely behind the audit", () => {
+    const dir = scratchProject(true);
+    try {
+      // Audit advanced to user-stories (in-flight), state still on
+      // requirements-analysis → a legitimate forward nudge.
+      const path = seededStateFile(dir);
+      let content = readFileSync(path, "utf-8");
+      if (!content.includes("user-stories")) {
+        content = content.replace(
+          "- [-] requirements-analysis — EXECUTE",
+          "- [-] requirements-analysis — EXECUTE\n- [ ] user-stories — EXECUTE",
+        );
+      }
+      writeFileSync(path, content, "utf-8");
+      appendStageStarted(dir, "user-stories", "2026-06-30T10:00:00.000Z");
+      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      expect(r.code).toBe(0);
+      expect(stateField(dir, "Current Stage")).toBe("user-stories");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("t188 latestStartedStageSlug filters single-stage rows (finding 2)", () => {
+  test("F2: a --single STAGE_STARTED does not rewrite the main pointer", () => {
+    const dir = scratchProject(true);
+    try {
+      // State on requirements-analysis; a single-stage run of user-stories
+      // appended a synthetic STAGE_STARTED. The sync must ignore it.
+      appendSingleStageStarted(dir, "user-stories", "2026-06-30T10:00:00.000Z");
+      const before = stateField(dir, "Current Stage");
+      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      expect(r.code).toBe(0);
+      expect(stateField(dir, "Current Stage")).toBe(before); // unchanged
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("t188 extractWrittenPath robustness (finding 4)", () => {
+  test("F4a: trailing newline in a Created result still extracts the path", () => {
+    const dir = scratchProject(true);
+    try {
+      const file = join(seededRecordDir(dir), "ideation", "intent-capture", "intent.md");
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "# intent\n");
+      const rel = relative(dir, file);
+      // Note the trailing newline after the wording.
+      const r = runIde(dir, "audit-and-sensors", ctx("fs_write", `Created the ${rel} file.\n`));
+      expect(r.code).toBe(0);
+      expect(readAudit(dir)).toContain("ARTIFACT_CREATED");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F4b: a str_replace suffix ' (N occurrences)' does not pollute the path", () => {
+    const dir = scratchProject(true);
+    try {
+      const file = join(seededRecordDir(dir), "ideation", "intent-capture", "intent.md");
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "# edited\n");
+      const rel = relative(dir, file);
+      const r = runIde(dir, "audit-and-sensors", ctx("str_replace", `Replaced text in ${rel} (2 occurrences)`));
+      expect(r.code).toBe(0);
+      const audit = readAudit(dir);
+      expect(audit).toContain("ARTIFACT_UPDATED");
+      // The audited File must be the clean path, not "...intent.md (2 occurrences)".
+      expect(audit).not.toContain("(2 occurrences)");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F4c: an unrecognized write result records a visible hook-drop", () => {
+    const dir = scratchProject(true);
+    try {
+      const r = runIde(dir, "audit-and-sensors", ctx("fs_write", "Wrote something somewhere"));
+      expect(r.code).toBe(0);
+      // No audit row, but a drop is recorded for --doctor to surface.
+      const dropFile = join(seededRecordDir(dir), ".aidlc-hooks-health", "kiro-adapter.drops");
+      expect(existsSync(dropFile)).toBe(true);
+      expect(readFileSync(dropFile, "utf-8")).toContain("no extractable path");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
