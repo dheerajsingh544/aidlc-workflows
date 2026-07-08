@@ -29,10 +29,11 @@ Re-copy your `dist/kiro-ide/.kiro/` to pick up the fix.
   `STAGE_STARTED`) instead of the tool command or task payload the IDE does not
   surface. `aidlc-sync-statusline` is wired to the `shell` tool event (the
   `spec` event never fires in the IDE).
-* **Opt-in hook debug log.** Set `AIDLC_HOOK_DEBUG=1` to have every hook append
-  its decision path to `<record>/.aidlc-hooks-health/hook-debug.log`. Off by
-  default (no log, no overhead); see the Kiro IDE harness guide for enabling it
-  for IDE hooks.
+* **Opt-in hook debug log.** Enable it to have every hook append its decision
+  path to `<record>/.aidlc-hooks-health/hook-debug.log` — either set
+  `AIDLC_HOOK_DEBUG=1`, or `touch aidlc/.aidlc-hook-debug` (the filesystem
+  marker takes effect on the next hook fire with no IDE restart). Off by default
+  (no log, no overhead); see the Kiro IDE harness guide.
 * **The IDE audit-tail gating is forward-only and idempotent** (PR-review
   hardening). `aidlc-sync-statusline` never rewinds `Current Stage`: it skips
   when the workflow is not `Running`, when the pointer is `none`, or when the

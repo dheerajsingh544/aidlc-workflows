@@ -3644,16 +3644,26 @@ export function recordHookDrop(
 //
 // Append a structured debug line to `<health>/hook-debug.log` so a hook's
 // decision path can be inspected after a run WITHOUT re-deriving it by
-// hypothesis. OPT-IN ONLY: enabled when AIDLC_HOOK_DEBUG is set, off
-// everywhere otherwise. Off-by-default means zero log growth and zero write
-// cost on a normal run; turn it on deliberately when debugging.
-//   - On the CLI/Claude/Codex: `AIDLC_HOOK_DEBUG=1 <command>` or export it.
-//   - For Kiro IDE hooks (no per-command env): add `export AIDLC_HOOK_DEBUG=1`
-//     to `~/.zshenv` (the file non-interactive shells read — same place bun's
-//     PATH export goes), then reload. Every IDE hook subprocess then logs.
+// hypothesis. OPT-IN ONLY, off by default (zero log growth / zero write cost on
+// a normal run). Two independent switches, either enables it:
+//   1. Env var `AIDLC_HOOK_DEBUG` — best for the CLI/Claude/Codex:
+//      `AIDLC_HOOK_DEBUG=1 <command>` or export it.
+//   2. Filesystem marker `aidlc/.aidlc-hook-debug` — best for Kiro IDE, where
+//      the hook subprocesses are spawned by the IDE and an env var needs an IDE
+//      restart to take effect. `touch aidlc/.aidlc-hook-debug` turns logging on
+//      for the very next hook fire (no restart); `rm` it to turn off. When
+//      projectDir cannot be resolved (rare), only the env var is consulted.
 // Never throws; logging must never break a hook's advisory exit-0 contract.
-export function hookDebugEnabled(): boolean {
-  return Boolean(process.env.AIDLC_HOOK_DEBUG);
+export function hookDebugEnabled(projectDir?: string): boolean {
+  if (process.env.AIDLC_HOOK_DEBUG) return true;
+  if (projectDir) {
+    try {
+      return existsSync(join(workspaceRoot(projectDir), ".aidlc-hook-debug"));
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 export function hookDebug(
@@ -3662,7 +3672,7 @@ export function hookDebug(
   message: string,
   fields?: Record<string, unknown>,
 ): void {
-  if (!hookDebugEnabled()) return;
+  if (!hookDebugEnabled(projectDir)) return;
   try {
     const healthDir = hooksHealthDir(projectDir);
     mkdirSync(healthDir, { recursive: true });

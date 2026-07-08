@@ -89,13 +89,18 @@ You will see a "Run Command Hook" line in chat each time one fires.
 
 ### Debugging hooks
 
-If a hook isn't behaving as expected, set `AIDLC_HOOK_DEBUG=1` and each hook
+If a hook isn't behaving as expected, turn on debug logging and each hook
 appends its decision path (which gate it took, the resolved paths, why it
 exited) to `<record>/.aidlc-hooks-health/hook-debug.log`. It is **off by
-default** — no log is written and there is no overhead on a normal run. Because
-the IDE runs hooks in non-interactive shells, set the flag where those shells
-read it: add `export AIDLC_HOOK_DEBUG=1` to `~/.zshenv` (zsh) or `~/.bashrc`
-(bash), then restart the IDE. Remove it to turn logging back off.
+default** — no log is written and there is no overhead on a normal run. Two
+ways to enable it, either works:
+
+- **Filesystem marker (easiest on Kiro IDE):** `touch aidlc/.aidlc-hook-debug`
+  in your project. It takes effect on the very next hook fire — no IDE restart —
+  and `rm aidlc/.aidlc-hook-debug` turns it back off.
+- **Environment variable:** `export AIDLC_HOOK_DEBUG=1`. Because the IDE runs
+  hooks in non-interactive shells, set it where those shells read it — add the
+  export to `~/.zshenv` (zsh) or `~/.bashrc` (bash), then restart the IDE.
 
 ## What's different on Kiro IDE
 

@@ -354,6 +354,33 @@ describe("t188 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
       rmSync(dirOn, { recursive: true, force: true });
     }
   });
+
+  test("13b: the filesystem marker aidlc/.aidlc-hook-debug enables logging (no env var)", () => {
+    const debugLogPath = (dir: string) =>
+      join(seededRecordDir(dir), ".aidlc-hooks-health", "hook-debug.log");
+    const dir = scratchProject(true);
+    try {
+      // touch the marker; do NOT set AIDLC_HOOK_DEBUG.
+      writeFileSync(join(dir, "aidlc", ".aidlc-hook-debug"), "", "utf-8");
+      const file = join(seededRecordDir(dir), "ideation", "intent-capture", "intent.md");
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "# intent\n");
+      const env: Record<string, string> = { ...process.env, CLAUDE_PROJECT_DIR: dir };
+      env.USER_PROMPT = ctx("fs_write", `Created the ${file} file.`);
+      delete (env as Record<string, string | undefined>).AIDLC_HOOK_DEBUG;
+      spawnSync("bun", [join(dir, ".kiro", "hooks", "aidlc-kiro-adapter.ts"), "audit-and-sensors"], {
+        cwd: dir,
+        input: "",
+        encoding: "utf-8",
+        env,
+        timeout: 30_000,
+      });
+      expect(existsSync(debugLogPath(dir))).toBe(true);
+      expect(readFileSync(debugLogPath(dir), "utf-8")).toContain("audit-logger");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ============================================================
